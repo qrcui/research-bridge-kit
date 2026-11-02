@@ -1,0 +1,5 @@
+# Per-project deployment configs contain local paths; keep them out of the repository.
+configs/*.json
+__pycache__/
+*.pyc
+*.zip

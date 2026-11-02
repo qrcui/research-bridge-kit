@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent 实时视图</title>
+<style>
+:root {
+  --bg: #fbfaf7; --panel: #f1efe9; --text: #24231f; --muted: #76736a; --line: #e2dfd6;
+  --codex: #1f6f5c; --claude: #a8522a; --warn: #a33;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1b19; --panel: #262623; --text: #e6e4dc; --muted: #97948a; --line: #383732;
+    --codex: #62c3a9; --claude: #e39a72; --warn: #e88;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.55 system-ui, "Microsoft YaHei UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+#project { color: var(--muted); font-weight: 600; }
+#status { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 11em; }
+#status.off { color: var(--warn); }
+header .tools { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+button { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 2px 10px; cursor: pointer; }
+button:hover { background: var(--bg); }
+main { padding: 8px 16px 48px; }
+.row { display: grid; grid-template-columns: 4.6em 5.4em minmax(0, 1fr); gap: 0 10px; padding: 3px 0; align-items: baseline; }
+.time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+.who { font-size: 12px; font-weight: 600; }
+.codex .who { color: var(--codex); }
+.claude .who { color: var(--claude); }
+.say .body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.think .body, .empty { color: var(--muted); font-size: 12px; }
+.done .body { white-space: pre-wrap; overflow-wrap: anywhere; font-weight: 600; }
+.session { display: block; margin: 16px 0 6px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+details > summary { cursor: pointer; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+details > summary:hover { color: var(--text); }
+pre { margin: 6px 0 8px; padding: 10px; max-height: 70vh; overflow: auto; background: var(--panel); border-radius: 6px; font: 12px/1.5 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .row { grid-template-columns: 4.6em minmax(0, 1fr); }
+  .row .body { grid-column: 1 / -1; }
+}
+</style>
+</head>
+<body>
+<header>
+  <span id="project"></span>
+  <span id="status">连接中…</span>
+  <span class="tools">
+    <label><input type="checkbox" id="follow" checked autocomplete="off"> 跟随最新</label>
+    <button id="openAll" type="button">全部展开</button>
+    <button id="closeAll" type="button">全部折叠</button>
+  </span>
+</header>
+<main id="log"></main>
+<script>
+const log = document.getElementById('log');
+const statusEl = document.getElementById('status');
+const projectEl = document.getElementById('project');
+const follow = document.getElementById('follow');
+const NAMES = { codex: 'Codex', claude: 'Claude' };
+const KINDS = { say: '发言', think: '推理', run: '命令', output: '输出', done: '完成' };
+let since = 0;
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function brief(e) {
+  const lines = e.text.split('\n').filter(l => l.trim());
+  const count = lines.length > 1 ? ` · ${lines.length} 行` : '';
+  let head = e.summary;
+  if (!head) {
+    const file = e.text.match(/\*\*\* (Add|Update|Delete) File: (.+)/);
+    const cmd = e.text.match(/cmd:"(.+?)"/);
+    if (file) head = { Add: '新建', Update: '修改', Delete: '删除' }[file[1]] + '文件 ' + file[2].split(/[\\/]/).pop();
+    else if (cmd) head = cmd[1];
+    else head = lines[0] || '';
+  }
+  return (head.length > 140 ? head.slice(0, 140) + '…' : head) + count;
+}
+
+function body(e) {
+  const b = el('div', 'body');
+  if (e.kind === 'run' || e.kind === 'output') {
+    if (!e.text.trim()) { b.append(el('span', 'empty', '（无内容）')); return b; }
+    const d = el('details');
+    d.append(el('summary', '', brief(e)));
+    d.append(el('pre', '', e.text));
+    b.append(d);
+  } else if (e.kind === 'think') {
+    const took = e.summary ? e.summary + ' ' : '';
+    b.textContent = e.text ? took + e.text : took + '（内容不可读）';
+  } else {
+    b.textContent = e.text;
+  }
+  return b;
+}
+
+function add(e) {
+  if (e.kind === 'session') {
+    log.append(el('div', 'session ' + e.agent, `${NAMES[e.agent]} · ${e.text}`));
+    return;
+  }
+  const row = el('div', `row ${e.agent} ${e.kind}`);
+  row.append(el('span', 'time', e.time || '--:--:--'));
+  row.append(el('span', 'who', `${NAMES[e.agent]} ${KINDS[e.kind]}`));
+  row.append(body(e));
+  log.append(row);
+}
+
+function showStatus(s) {
+  statusEl.classList.remove('off');
+  if (!s) { statusEl.textContent = '当前无进行中的 Codex 事件'; return; }
+  const [what, secs] = s.split(' ');
+  statusEl.textContent = (what === 'tool' ? 'Codex 工具运行中 ' : 'Codex 模型工作中 ') + secs + ' 秒';
+}
+
+async function poll() {
+  let wait = 1000;
+  try {
+    const r = await fetch('/events?since=' + since, { cache: 'no-store' });
+    const data = await r.json();
+    if (data.project && !projectEl.textContent) {
+      projectEl.textContent = data.project;
+      document.title = data.project + ' · Agent 实时视图';
+    }
+    const list = data.events || [];
+    list.forEach(add);
+    since += list.length;
+    showStatus(data.status);
+    if (list.length && follow.checked) window.scrollTo(0, document.body.scrollHeight);
+    if (since < data.total) wait = 0;
+  } catch (err) {
+    statusEl.textContent = '查看服务未连接（agent 不受影响）';
+    statusEl.classList.add('off');
+  }
+  setTimeout(poll, wait);
+}
+
+// Back at the bottom resumes following; scrolling up or opening a row pauses it so the row stays in place.
+let lastY = 0;
+window.addEventListener('scroll', () => {
+  if (innerHeight + scrollY >= document.body.scrollHeight - 40) follow.checked = true;
+  else if (scrollY < lastY) follow.checked = false;
+  lastY = scrollY;
+}, { passive: true });
+log.addEventListener('toggle', e => { if (e.target.open) follow.checked = false; }, true);
+document.getElementById('openAll').onclick = () => { follow.checked = false; log.querySelectorAll('details').forEach(d => d.open = true); };
+document.getElementById('closeAll').onclick = () => log.querySelectorAll('details').forEach(d => d.open = false);
+poll();
+</script>
+</body>
+</html>
