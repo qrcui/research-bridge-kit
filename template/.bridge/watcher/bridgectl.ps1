@@ -93,7 +93,7 @@ function Show-Status {
     if ($live.Count) { Write-Host ("Live agent processes: " + ($live -join ', ')) -ForegroundColor Yellow }
     $lv = J 'watcher\LIVE_VIEW.json'
     if ($lv -and $lv.pid) {
-        try { Get-Process -Id ([int]$lv.pid) -ErrorAction Stop | Out-Null; Write-Host ("Live view : http://localhost:{0}/" -f $lv.port) -ForegroundColor Cyan } catch { }
+        try { Get-Process -Id ([int]$lv.pid) -ErrorAction Stop | Out-Null; Write-Host ("Live view : http://127.0.0.1:{0}/" -f $lv.port) -ForegroundColor Cyan } catch { }
     }
     Write-Host ''
 }
@@ -114,17 +114,12 @@ function Report([string]$name, [bool]$ok, [string]$detail) {
 switch ($Command) {
     'status' { Show-Status }
     'view' {
-        $lvs = Join-Path $PSScriptRoot 'live_view.ps1'
-        if (-not (Test-Path -LiteralPath $lvs)) { throw 'live_view.ps1 is missing; upgrade this deployment with research-bridge-kit (deploy.py --upgrade-code).' }
-        $hostExe = (Get-Process -Id $PID).Path
-        $lvArgs = '-NoProfile -ExecutionPolicy Bypass -File "' + $lvs + '"'
-        if (($PSVersionTable.PSEdition -ne 'Core') -or $IsWindows) {
-            Start-Process -FilePath $hostExe -ArgumentList $lvArgs      # own console window, inherits no handles
-        } else {
-            $lvLog = Join-Path $PSScriptRoot 'logs\live_view'
-            Start-Process -FilePath $hostExe -ArgumentList $lvArgs -RedirectStandardOutput "$lvLog.out.log" -RedirectStandardError "$lvLog.err.log"
-        }
-        Write-Host 'Live view is starting in its own window and opens in your browser (default http://localhost:8765/, next free port if taken). Close that window to stop viewing; the agents are not affected.' -ForegroundColor Cyan
+        $lvs = Join-Path $PSScriptRoot 'live_view.py'
+        if (-not (Test-Path -LiteralPath $lvs)) { throw 'live_view.py is missing; upgrade this deployment with research-bridge-kit (deploy.py --upgrade-code).' }
+        $lvPort = 8765
+        if ($Cfg.PSObject.Properties.Name -contains 'live_view' -and $Cfg.live_view.port) { $lvPort = [int]$Cfg.live_view.port }
+        $r = Py @($lvs, 'open', '--port', [string]$lvPort)
+        Write-Host "Live view: $($r.url) (opened in your browser; read-only). It runs in the background and the watcher keeps it running; the page reconnects by itself. The agents are not affected." -ForegroundColor Cyan
     }
     'check' {
         $script:CheckFailed = $false
@@ -151,6 +146,9 @@ switch ($Command) {
             }
             if ($c) { Report "$n CLI" $true $c.Source } else { Report "$n CLI" $false 'not found: double-click .bridge\watcher\install_clis.cmd' }
         }
+        $lt = Run-Native @('-m', 'unittest', 'test_live_view') $PSScriptRoot
+        $last = ($lt.out | Where-Object { $_ -match '^(Ran |OK|FAILED)' }) -join ' '
+        Report 'live view tests' ($lt.code -eq 0) $last
         $w = Watcher-Alive
         if ($w) { Write-Host ("[INFO] watcher                RUNNING {0}" -f $w.watcher_id) -ForegroundColor Cyan }
         else { Write-Host '[INFO] watcher                not running (start it with .bridge\watcher\start_watcher.cmd before bridgectl start)' -ForegroundColor Yellow }

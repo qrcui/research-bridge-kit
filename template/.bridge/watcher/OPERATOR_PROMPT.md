@@ -27,7 +27,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .bridge/watcher/bridgectl.ps
 | Idea / change of direction / question / stage report / budget | `request "<user's exact words>" -Type IDEA|REDIRECT|REVIEW|CONFIGURE|QUESTION -Effective NEXT_ROUND|IMMEDIATE|REFERENCE_ONLY` |
 
 - If the watcher is not running (`status` shows NOT running), ask whether to open it for them; on yes run: `powershell -NoProfile -Command "Start-Process -FilePath '.bridge\watcher\start_watcher.cmd'"`.
-- The live view is read-only and listens on this computer only; closing it does not affect the agents. `status` shows its address.
+- The live view is read-only and listens on this computer only (127.0.0.1). The watcher keeps it running in the background and the page reconnects by itself; closing the page does not affect the agents. `status` shows its address. If the user says it is not working, run `view` again and read the end of `.bridge/watcher/logs/live_view.log`.
 - Recent watcher activity: the last 30 lines of `.bridge/watcher/watcher.log`. When an agent fails, read the end of the newest `.err.log` / `.out.log` in `.bridge/watcher/logs/`.
 - When the user wants to know how an agent handled a round: read that round's result / review / task files, the logs if needed, then summarize.
 

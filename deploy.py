@@ -25,7 +25,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-KIT_VERSION = '3.1.0'
+KIT_VERSION = '3.2.0'
 KIT = Path(__file__).resolve().parent
 TEMPLATE = KIT / 'template'
 RENDER_SUFFIXES = {'.md', '.txt'}
@@ -37,6 +37,7 @@ CODE_FILES = [
     '.bridge/watcher/install_clis.ps1', '.bridge/watcher/install_clis.cmd',
     '.bridge/watcher/operator.ps1', '.bridge/watcher/operator.cmd',
     '.bridge/watcher/live_view.ps1', '.bridge/watcher/live_view.html', '.bridge/watcher/live_view.cmd',
+    '.bridge/watcher/live_view.py', '.bridge/watcher/test_live_view.py',
 ]
 EXAMPLE = {
     "project_root": "D:/path/to/your/project",
@@ -262,6 +263,7 @@ def watcher_config(c):
         "python": c['python'].replace('\\', '/'),
         "debounce_ms": 1500, "rescan_seconds": 60, "max_attempts_per_state": 2,
         "retry_delay_seconds": 120, "heartbeat_seconds": 300,
+        "live_view": {"enabled": True, "port": 8765},
         "agents": {
             "claude": {"enabled": True, "command": "claude", "args": claude,
                        "prompt_file": ".bridge/watcher/CLAUDE_WORKER_PROMPT.txt"},
@@ -451,12 +453,14 @@ def verify(target):
     res['python'] = (r.stdout.strip(), 'OK' if r.returncode == 0 else 'TOO OLD (need 3.12+)')
     r = subprocess.run([py, '-m', 'unittest', 'test_dispatcher'], cwd=str(b), capture_output=True, text=True)
     res['unit_tests'] = 'PASS' if r.returncode == 0 else 'FAIL: ' + r.stderr.strip()[-600:]
+    r = subprocess.run([py, '-m', 'unittest', 'test_live_view'], cwd=str(b / 'watcher'), capture_output=True, text=True)
+    res['live_view_tests'] = 'PASS' if r.returncode == 0 else 'FAIL: ' + r.stderr.strip()[-600:]
     for name in ['dispatcher.py', 'claude_bridge.py']:
         r = subprocess.run([py, str(b / name), 'probe'], cwd=str(target), capture_output=True, text=True)
         res[name + ' probe'] = (r.stdout.strip().splitlines() or ['(no output) ' + r.stderr.strip()[-300:]])[-1]
     for cli in ['claude', 'codex']:
         res[cli + ' CLI'] = shutil.which(cli) or 'NOT FOUND (run .bridge\\watcher\\install_clis.cmd)'
-    ok = res['python'][1] == 'OK' and res['unit_tests'] == 'PASS'
+    ok = res['python'][1] == 'OK' and res['unit_tests'] == 'PASS' and res['live_view_tests'] == 'PASS'
     print(json.dumps({'action': 'VERIFIED' if ok else 'VERIFY_FAILED', **res}, ensure_ascii=False, indent=2))
     sys.exit(0 if ok else 1)
 

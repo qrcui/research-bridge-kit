@@ -131,7 +131,7 @@ PROJECT_ROOT/
     └── watcher/
         ├── bridge_watcher.ps1      # 事件驱动 Dispatcher
         ├── bridgectl.ps1           # 人类控制命令
-        ├── live_view.ps1/.html     # 只读实时视图（浏览器查看两个 agent 的输出）
+        ├── live_view.py/.html      # 只读实时视图（浏览器查看两个 agent 的输出，由 watcher 保持运行）
         ├── *_WORKER_PROMPT.txt     # 两个 Worker 的启动 prompt
         └── OPERATOR_PROMPT.md      # Operator 对话的角色说明
 ```

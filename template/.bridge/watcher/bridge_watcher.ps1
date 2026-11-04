@@ -21,6 +21,9 @@
     ACTIVE + non-RUN mode     : the probes themselves decide (e.g. Claude may finish a review).
     STARTING / ACTIVE + RUN   : normal event-driven operation plus a cheap safety rescan.
 
+  It also keeps the read-only live view (live_view.py) running in the background: an HTTP health
+  check every 30 s and a restart if it stopped answering. Disable with "live_view": {"enabled": false}.
+
   Stopping this window does NOT stop an agent already running (it has its own hidden console);
   it finishes its current task. A restarted watcher re-adopts such processes from WATCHER_STATE.
 
@@ -63,6 +66,12 @@ $RescanSec = [int](CfgVal $Cfg 'rescan_seconds' 60)
 $MaxAttempts = [int](CfgVal $Cfg 'max_attempts_per_state' 2)
 $RetryDelaySec = [int](CfgVal $Cfg 'retry_delay_seconds' 120)
 $HeartbeatSec = [int](CfgVal $Cfg 'heartbeat_seconds' 300)
+# Read-only live view (live_view.py): kept running in the background by this watcher.
+$LiveViewPy = Join-Path $WDir 'live_view.py'
+$LvCfg = CfgVal $Cfg 'live_view' $null
+$LvEnabled = [bool](CfgVal $LvCfg 'enabled' $true)
+$LvPort = [int](CfgVal $LvCfg 'port' 8765)
+$LvCheckSec = 30
 
 $env:PYTHONIOENCODING = 'utf-8'
 if ($OnWindows) {
@@ -138,6 +147,32 @@ function Resolve-Exe([string]$command) {
         }
     }
     return $null
+}
+
+function Test-LiveView {
+    # True when this project's live view answers /health. No proxy, short timeout, never throws.
+    $lv = Read-JsonFile (Join-Path $WDir 'LIVE_VIEW.json')
+    if ($null -eq $lv -or -not $lv.port) { return $false }
+    try {
+        $req = [System.Net.WebRequest]::Create("http://127.0.0.1:$([int]$lv.port)/health")
+        $req.Proxy = $null; $req.Timeout = 3000; $req.ReadWriteTimeout = 3000
+        $resp = $req.GetResponse()
+        try { $sr = New-Object System.IO.StreamReader($resp.GetResponseStream()); $h = $sr.ReadToEnd() | ConvertFrom-Json } finally { $resp.Close() }
+        return ([bool]$h.ok -and [string]$h.instance -eq [string]$lv.instance)
+    } catch { return $false }
+}
+
+function Ensure-LiveView {
+    # Starts the hidden viewer when it is not answering; it survives this window and is re-checked every $LvCheckSec s.
+    if (-not $LvEnabled -or $DryRun -or -not (Test-Path -LiteralPath $LiveViewPy)) { return }
+    if (Test-LiveView) { return }
+    $r = Invoke-Py @($LiveViewPy, 'ensure', '--port', [string]$LvPort)
+    if ($r.ok -and $r.json.url) {
+        $verb = if ($r.json.action -eq 'STARTED') { 'started' } else { 'running' }
+        Write-Log "Live view $verb at $($r.json.url) (read-only; open it with live_view.cmd or bridgectl view)."
+    } else {
+        Note-Once 'liveview' "Live view could not be started: $($r.raw)$(if (-not $r.ok) { $r.text }). See .bridge\watcher\logs\live_view.out.log." 'WARN'
+    }
 }
 
 # ------------------------------------------------------------------ single instance
@@ -407,6 +442,7 @@ try {
     $script:Life = 'UNKNOWN'
     Invoke-Dispatch 'startup' | Out-Null
     if ($Once) { return }
+    try { Ensure-LiveView } catch { Write-Log "Live view check failed: $($_.Exception.Message)" 'WARN' }
 
     $fsw = New-Object System.IO.FileSystemWatcher $Bridge
     $fsw.IncludeSubdirectories = $true
@@ -423,6 +459,7 @@ try {
     $lastEvent = Get-Date
     $lastScan = Get-Date
     $lastBeat = Get-Date
+    $lastLv = Get-Date
     while ($true) {
         Wait-Event -Timeout 1 | Out-Null
         foreach ($e in @(Get-Event -ErrorAction SilentlyContinue)) {
@@ -448,6 +485,11 @@ try {
             Invoke-Dispatch 'rescan' | Out-Null; $lastScan = $now
         }
         if (($now - $lastBeat).TotalSeconds -ge $HeartbeatSec) { Save-WatcherState; $lastBeat = $now }
+        if (($now - $lastLv).TotalSeconds -ge $LvCheckSec) {
+            # Viewer upkeep only: an HTTP health check, and a restart if it stopped answering. Never dispatches.
+            $lastLv = $now
+            try { Ensure-LiveView } catch { Note-Once 'liveview' "Live view check failed: $($_.Exception.Message)" 'WARN' }
+        }
     }
 } finally {
     if ($fsw) { $fsw.EnableRaisingEvents = $false; $fsw.Dispose() }

@@ -1,4 +1,4 @@
-# research-bridge-kit 3.1.0
+# research-bridge-kit 3.2.0
 
 English | [中文](README.zh-CN.md)
 
@@ -63,9 +63,20 @@ python deploy.py --verify --project D:\path\to\project           # self-check
 | Run the watcher (keep it open) | double-click `.bridge\watcher\start_watcher.cmd` |
 | Talk to the system | desktop app Code tab → Local → project folder; first message: "You are the Operator of this project. Read `.bridge/watcher/OPERATOR_PROMPT.md` completely, follow it, then tell me the current state." |
 | Start / pause / resume / end / give input / check progress | just say it in the Operator chat |
-| Watch the agents live | double-click `.bridge\watcher\live_view.cmd`, or ask the Operator to "open the live view": every message, reasoning step, command and output of both agents in your browser |
+| Watch the agents live | double-click `.bridge\watcher\live_view.cmd`, or ask the Operator to "open the live view": every message, reasoning step, command and output of both agents (including Codex subagents) in your browser. See [Live view](#live-view) |
 | CLIs missing or not logged in | double-click `.bridge\watcher\install_clis.cmd` |
 | Self-check | ask the Operator to run `bridgectl check` |
+
+## Live view
+
+A read-only page at `http://127.0.0.1:8765/` (the next free port if that one is taken) that shows what both agents are doing as it happens.
+
+- **Always on:** the viewer (`.bridge/watcher/live_view.py`, Python standard library) runs in the background. The watcher starts it, checks it every 30 s and restarts it if it stopped. `live_view.cmd` / `bridgectl view` only open the page (and start the viewer if the watcher is not running).
+- **No restarts needed:** the page reconnects by itself, and after a viewer restart it resyncs automatically. New Claude runs, new Codex sessions and Codex subagents appear without reloading; a Codex session that keeps working after its subagent finished stays followed.
+- **Stays fast on long runs:** the viewer keeps the latest ~5000 events, the page the latest ~2000 rows; long command output is loaded only when you open its row. The complete output always remains in the agent logs.
+- **Safe:** listens on 127.0.0.1 only, reads agent files without writing them, and never touches bridge state.
+- **Settings:** `"live_view": {"enabled": true, "port": 8765}` in `.bridge\watcher\watcher_config.json` (restart the watcher after editing). Its own log is `.bridge\watcher\logs\live_view.log`.
+- **Other commands:** `<project python> .bridge/watcher/live_view.py status | stop | open`. The viewer itself also runs on Linux and macOS (`python3 .bridge/watcher/live_view.py open`).
 
 ## Upgrading an existing deployment
 
@@ -73,11 +84,11 @@ python deploy.py --verify --project D:\path\to\project           # self-check
 python deploy.py --upgrade-code --project "D:\path\to\project"
 ```
 
-- Replaces code files only: the two helpers, tests, watcher, bridgectl and live-view scripts.
+- Replaces code files only: the two helpers, tests, watcher, bridgectl and live-view files.
 - Replaced files are backed up to `.bridge\deployment_backups\` first.
 - Documents, prompts, configs, constraints and state are never touched.
 - Refuses while a task is running.
-- Restart the watcher window afterwards.
+- Restart the watcher window afterwards. Upgrading from 3.1: close the old live-view window if one is open; the restarted watcher starts the new background viewer by itself.
 
 ## Requirements
 
@@ -96,6 +107,7 @@ python deploy.py --upgrade-code --project "D:\path\to\project"
 
 ## Versions
 
+- 3.2.0: live view rewritten in Python: kept running by the watcher, page reconnects and resyncs by itself, follows every live Codex session including subagents, bounded memory, long output loaded on demand, localhost-only Host check; `bridgectl check` and `deploy.py --verify` also run its tests.
 - 3.1.0: read-only live view (`live_view.cmd` / `bridgectl view`) and `bridgectl check`; bilingual documentation.
 - 3.0.0: first generic release, extracted from a working V3.0 deployment.
 

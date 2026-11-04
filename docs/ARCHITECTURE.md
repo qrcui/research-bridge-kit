@@ -131,7 +131,7 @@ PROJECT_ROOT/
     └── watcher/
         ├── bridge_watcher.ps1      # event-driven dispatcher
         ├── bridgectl.ps1           # human control commands
-        ├── live_view.ps1/.html     # read-only live view of both agents in the browser
+        ├── live_view.py/.html      # read-only live view of both agents in the browser (kept running by the watcher)
         ├── *_WORKER_PROMPT.txt     # launch prompts of the two workers
         └── OPERATOR_PROMPT.md      # role definition of the Operator chat
 ```

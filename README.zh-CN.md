@@ -1,4 +1,4 @@
-# research-bridge-kit 3.1.0
+# research-bridge-kit 3.2.0
 
 [English](README.md) | 中文
 
@@ -63,9 +63,20 @@ python deploy.py --verify --project D:\path\to\project           # 自检
 | 开 watcher（一直开着） | 双击 `.bridge\watcher\start_watcher.cmd` |
 | 跟系统对话 | 桌面版 Code → Local → 项目文件夹，第一句发：“你是本项目的 Operator，先完整阅读 `.bridge/watcher/OPERATOR_PROMPT.md` 并按它工作，然后告诉我当前状态” |
 | 开始 / 暂停 / 继续 / 结束 / 提意见 / 看进度 | 在 Operator 对话里直接说 |
-| 看 agent 实时输出 | 双击 `.bridge\watcher\live_view.cmd`，或在 Operator 对话里说“打开实时视图”。浏览器里逐条显示两个 agent 的发言、推理、命令和输出 |
+| 看 agent 实时输出 | 双击 `.bridge\watcher\live_view.cmd`，或在 Operator 对话里说“打开实时视图”。浏览器里逐条显示两个 agent（包括 Codex 子代理）的发言、推理、命令和输出。详见[实时视图](#实时视图) |
 | CLI 没装或没登录 | 双击 `.bridge\watcher\install_clis.cmd` |
 | 自检 | 让 Operator 跑 `bridgectl check` |
+
+## 实时视图
+
+一个只读网页，地址是 `http://127.0.0.1:8765/`（端口被占用时依次用下一个），实时显示两个 agent 正在做什么。
+
+- **一直在线**：查看服务（`.bridge/watcher/live_view.py`，只用 Python 标准库）在后台运行。watcher 负责启动它，每 30 秒检查一次，停了就重新拉起。`live_view.cmd` / `bridgectl view` 只负责打开网页（watcher 没开时也会顺便启动查看服务）。
+- **不用重启**：页面断线会自己重连，查看服务重启后页面自动重新同步。新的 Claude 运行、新的 Codex 会话和 Codex 子代理都会自动出现，不用刷新；子代理结束后 Codex 主会话还在干活，也会继续跟着显示。
+- **长时间运行也不卡**：查看服务只保留最近约 5000 条事件，页面只保留最近约 2000 行；很长的命令输出要展开那一行时才加载。完整内容始终在 agent 日志里。
+- **安全**：只监听 127.0.0.1，只读不写 agent 文件，不碰任何 bridge 状态。
+- **设置**：`.bridge\watcher\watcher_config.json` 里的 `"live_view": {"enabled": true, "port": 8765}`（改完重启 watcher）。它自己的日志是 `.bridge\watcher\logs\live_view.log`。
+- **其他命令**：`<项目 python> .bridge/watcher/live_view.py status | stop | open`。查看服务本身在 Linux 和 macOS 上也能运行（`python3 .bridge/watcher/live_view.py open`）。
 
 ## 升级已有部署
 
@@ -73,11 +84,11 @@ python deploy.py --verify --project D:\path\to\project           # 自检
 python deploy.py --upgrade-code --project "D:\path\to\project"
 ```
 
-- 只替换代码文件：两个 helper、测试、watcher、bridgectl 和实时视图脚本。
+- 只替换代码文件：两个 helper、测试、watcher、bridgectl 和实时视图相关文件。
 - 被替换的旧文件会先备份到 `.bridge\deployment_backups\`。
 - 不会碰文档、prompt、配置、约束和状态文件。
 - 有任务正在运行时会拒绝执行。
-- 升级完以后重开 watcher 窗口。
+- 升级完以后重开 watcher 窗口。从 3.1 升级时，如果旧的实时视图窗口还开着，先关掉它；重开的 watcher 会自动启动新的后台查看服务。
 
 ## 系统要求
 
@@ -96,6 +107,7 @@ python deploy.py --upgrade-code --project "D:\path\to\project"
 
 ## 版本
 
+- 3.2.0：实时视图用 Python 重写：由 watcher 保持运行，页面自动重连并重新同步，跟踪所有正在运行的 Codex 会话（包括子代理），内存有上限，长输出按需加载，只接受本机地址的请求；`bridgectl check` 和 `deploy.py --verify` 也会跑它的测试。
 - 3.1.0：加入只读实时视图（`live_view.cmd` / `bridgectl view`）和 `bridgectl check`；文档改为中英双语。
 - 3.0.0：第一个通用版本，来自一个实际运行中的 V3.0 部署。
 

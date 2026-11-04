@@ -7,36 +7,39 @@
 <style>
 :root {
   --bg: #fbfaf7; --panel: #f1efe9; --text: #24231f; --muted: #76736a; --line: #e2dfd6;
-  --codex: #1f6f5c; --claude: #a8522a; --warn: #a33;
+  --codex: #1f6f5c; --claude: #a8522a; --warn: #a33; --ok: #2f7d32;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #1b1b19; --panel: #262623; --text: #e6e4dc; --muted: #97948a; --line: #383732;
-    --codex: #62c3a9; --claude: #e39a72; --warn: #e88;
+    --codex: #62c3a9; --claude: #e39a72; --warn: #e88; --ok: #8bc78e;
   }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.55 system-ui, "Microsoft YaHei UI", sans-serif; }
-header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.55 system-ui, "Microsoft YaHei UI", "PingFang SC", sans-serif; }
+header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
 #project { color: var(--muted); font-weight: 600; }
-#status { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 11em; }
+#status { font-variant-numeric: tabular-nums; font-weight: 600; }
 #status.off { color: var(--warn); }
+#agents { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+#agents .on { color: var(--ok); font-weight: 600; }
 header .tools { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 button { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 2px 10px; cursor: pointer; }
 button:hover { background: var(--bg); }
 main { padding: 8px 16px 48px; }
-.row { display: grid; grid-template-columns: 4.6em 5.4em minmax(0, 1fr); gap: 0 10px; padding: 3px 0; align-items: baseline; }
+.row { display: grid; grid-template-columns: 4.6em 7.4em minmax(0, 1fr); gap: 0 10px; padding: 3px 0; align-items: baseline; }
 .time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
-.who { font-size: 12px; font-weight: 600; }
+.who { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
 .codex .who { color: var(--codex); }
 .claude .who { color: var(--claude); }
 .say .body { white-space: pre-wrap; overflow-wrap: anywhere; }
-.think .body, .empty { color: var(--muted); font-size: 12px; }
+.think .body, .empty { color: var(--muted); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .done .body { white-space: pre-wrap; overflow-wrap: anywhere; font-weight: 600; }
 .session { display: block; margin: 16px 0 6px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.note { display: block; margin: 8px 0; padding: 6px 10px; border-radius: 6px; background: var(--panel); color: var(--muted); font-size: 12px; }
 details > summary { cursor: pointer; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 details > summary:hover { color: var(--text); }
-pre { margin: 6px 0 8px; padding: 10px; max-height: 70vh; overflow: auto; background: var(--panel); border-radius: 6px; font: 12px/1.5 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+pre { margin: 6px 0 8px; padding: 10px; max-height: 70vh; overflow: auto; background: var(--panel); border-radius: 6px; font: 12px/1.5 Consolas, "Cascadia Mono", Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 560px) {
   .row { grid-template-columns: 4.6em minmax(0, 1fr); }
   .row .body { grid-column: 1 / -1; }
@@ -47,6 +50,7 @@ pre { margin: 6px 0 8px; padding: 10px; max-height: 70vh; overflow: auto; backgr
 <header>
   <span id="project"></span>
   <span id="status">连接中…</span>
+  <span id="agents"></span>
   <span class="tools">
     <label><input type="checkbox" id="follow" checked autocomplete="off"> 跟随最新</label>
     <button id="openAll" type="button">全部展开</button>
@@ -55,13 +59,18 @@ pre { margin: 6px 0 8px; padding: 10px; max-height: 70vh; overflow: auto; backgr
 </header>
 <main id="log"></main>
 <script>
+const MAX_ROWS = 2000;              // rows kept on the page; older ones are removed
 const log = document.getElementById('log');
 const statusEl = document.getElementById('status');
+const agentsEl = document.getElementById('agents');
 const projectEl = document.getElementById('project');
 const follow = document.getElementById('follow');
-const NAMES = { codex: 'Codex', claude: 'Claude' };
 const KINDS = { say: '发言', think: '推理', run: '命令', output: '输出', done: '完成' };
-let since = 0;
+let instance = null;                // viewer instance; a new one means the viewer restarted
+let next = 0;                       // first event id not yet shown
+let removed = 0;                    // rows removed from the page to stay under MAX_ROWS
+let trimNote = null;
+let failures = 0;
 
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -70,27 +79,58 @@ function el(tag, cls, text) {
   return n;
 }
 
+function note(text) { log.append(el('div', 'note', text)); }
+
+function reset(message) {
+  log.textContent = '';
+  next = 0; removed = 0; trimNote = null;
+  if (message) note(message);
+}
+
 function brief(e) {
-  const lines = e.text.split('\n').filter(l => l.trim());
-  const count = lines.length > 1 ? ` · ${lines.length} 行` : '';
-  let head = e.summary;
-  if (!head) {
-    const file = e.text.match(/\*\*\* (Add|Update|Delete) File: (.+)/);
-    const cmd = e.text.match(/cmd:"(.+?)"/);
-    if (file) head = { Add: '新建', Update: '修改', Delete: '删除' }[file[1]] + '文件 ' + file[2].split(/[\\/]/).pop();
-    else if (cmd) head = cmd[1];
-    else head = lines[0] || '';
+  const lines = (e.text || '').split('\n').filter(l => l.trim()).length;
+  const count = lines > 1 ? ` · ${lines} 行` : (e.text === null && e.size ? ` · ${Math.round(e.size / 1024)} KB` : '');
+  let head = e.summary || (e.text || '').split('\n').find(l => l.trim()) || '';
+  return (head.length > 160 ? head.slice(0, 160) + '…' : head) + count;
+}
+
+// Long command/output texts stay on the server until the row is opened.
+const queue = [];
+let loading = 0;
+function load(d) {
+  if (d.dataset.state) return;
+  d.dataset.state = 'queued';
+  queue.push(d);
+  pump();
+}
+function pump() {
+  while (loading < 4 && queue.length) {
+    const d = queue.shift();
+    const pre = d.querySelector('pre');
+    loading++;
+    fetch('/text?id=' + d.dataset.id, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(j => { pre.textContent = j.text; d.dataset.state = 'done'; })
+      .catch(err => {
+        pre.textContent = err === 404 ? '（这一条已超出查看器的保留范围；完整内容在 agent 日志里）' : '（加载失败，折叠后再展开可重试）';
+        if (err !== 404) delete d.dataset.state; else d.dataset.state = 'gone';
+      })
+      .finally(() => { loading--; pump(); });
   }
-  return (head.length > 140 ? head.slice(0, 140) + '…' : head) + count;
 }
 
 function body(e) {
   const b = el('div', 'body');
   if (e.kind === 'run' || e.kind === 'output') {
-    if (!e.text.trim()) { b.append(el('span', 'empty', '（无内容）')); return b; }
+    if (e.text !== null && !e.text.trim()) { b.append(el('span', 'empty', '（无内容）')); return b; }
     const d = el('details');
     d.append(el('summary', '', brief(e)));
-    d.append(el('pre', '', e.text));
+    const pre = el('pre', '', e.text === null ? '加载中…' : e.text);
+    d.append(pre);
+    if (e.text === null) {
+      d.dataset.id = e.id;
+      d.addEventListener('toggle', () => { if (d.open) load(d); });
+    }
     b.append(d);
   } else if (e.kind === 'think') {
     const took = e.summary ? e.summary + ' ' : '';
@@ -103,40 +143,80 @@ function body(e) {
 
 function add(e) {
   if (e.kind === 'session') {
-    log.append(el('div', 'session ' + e.agent, `${NAMES[e.agent]} · ${e.text}`));
+    log.append(el('div', 'session ' + e.agent, `${e.src} · ${e.text}`));
     return;
   }
+  if (e.kind === 'note') { note(`${e.src}：${e.text}`); return; }
   const row = el('div', `row ${e.agent} ${e.kind}`);
   row.append(el('span', 'time', e.time || '--:--:--'));
-  row.append(el('span', 'who', `${NAMES[e.agent]} ${KINDS[e.kind]}`));
+  row.append(el('span', 'who', `${e.src} ${KINDS[e.kind] || e.kind}`));
   row.append(body(e));
   log.append(row);
 }
 
+function trim() {
+  let extra = log.children.length - (trimNote ? 1 : 0) - MAX_ROWS;
+  if (extra <= 0) return;
+  if (!trimNote) { trimNote = el('div', 'note'); log.prepend(trimNote); }
+  while (extra-- > 0 && trimNote.nextSibling) { trimNote.nextSibling.remove(); removed++; }
+  trimNote.textContent = `为保持页面流畅，已从页面移除更早的 ${removed} 条（完整内容在 agent 日志里）。`;
+}
+
 function showStatus(s) {
   statusEl.classList.remove('off');
-  if (!s) { statusEl.textContent = '当前无进行中的 Codex 事件'; return; }
-  const [what, secs] = s.split(' ');
-  statusEl.textContent = (what === 'tool' ? 'Codex 工具运行中 ' : 'Codex 模型工作中 ') + secs + ' 秒';
+  if (!s) { statusEl.textContent = ''; agentsEl.textContent = ''; return; }
+  const a = s.codex_activity;
+  if (!s.watcher) statusEl.textContent = 'watcher 未运行：不会派发新工作';
+  else if (a) statusEl.textContent = `${a.src} ${a.what === 'tool' ? '工具运行中' : '模型工作中'} ${a.secs} 秒`;
+  else statusEl.textContent = s.claude || s.codex ? '运行中' : '两个 agent 都空闲';
+  if (!s.watcher) statusEl.classList.add('off');
+  agentsEl.textContent = '';
+  for (const [name, on] of [['Claude', s.claude], ['Codex', s.codex]]) {
+    const span = el('span', on ? 'on' : '', `${name} ${on ? '运行中' : '空闲'}`);
+    if (agentsEl.childNodes.length) agentsEl.append(' · ');
+    agentsEl.append(span);
+  }
 }
 
 async function poll() {
   let wait = 1000;
   try {
-    const r = await fetch('/events?since=' + since, { cache: 'no-store' });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    let r;
+    try { r = await fetch('/events?since=' + next, { cache: 'no-store', signal: ctrl.signal }); }
+    finally { clearTimeout(timer); }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
-    if (data.project && !projectEl.textContent) {
+    if (data.instance !== instance) {
+      const restarted = instance !== null;
+      instance = data.instance;
+      if (restarted || next !== 0) {
+        reset(restarted ? '查看服务已重启，已自动重新同步。' : '');
+        setTimeout(poll, 0);
+        return;
+      }
+    }
+    failures = 0;
+    if (data.project && projectEl.textContent !== data.project) {
       projectEl.textContent = data.project;
       document.title = data.project + ' · Agent 实时视图';
     }
+    if (data.first > next) {
+      if (next > 0 || data.first > 0) note(`更早的 ${data.first - next} 条已超出查看器的保留范围（完整内容在 agent 日志里）。`);
+      next = data.first;
+    }
     const list = data.events || [];
     list.forEach(add);
-    since += list.length;
+    next = data.next;
+    trim();
     showStatus(data.status);
     if (list.length && follow.checked) window.scrollTo(0, document.body.scrollHeight);
-    if (since < data.total) wait = 0;
+    if (data.more) wait = 0;
   } catch (err) {
-    statusEl.textContent = '查看服务未连接（agent 不受影响）';
+    failures++;
+    wait = Math.min(10000, 1000 * 2 ** Math.min(failures - 1, 4));
+    statusEl.textContent = `查看服务未连接，${Math.round(wait / 1000)} 秒后重试（agent 不受影响；watcher 会自动重新拉起查看服务）`;
     statusEl.classList.add('off');
   }
   setTimeout(poll, wait);

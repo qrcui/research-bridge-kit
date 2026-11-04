@@ -33,7 +33,7 @@ permissions, or a STOP/PAUSE request.
 | Codex | `CODEX_STATE.json`, `signals/codex_result.json`, `results/`, `locks/engineering.lock/`, `locks/codex_state.lock/`, `connectivity/`, Codex engineering code/tests/artifacts (normally `experiments/<task_id>/`) |
 | Claude Research Lead | `HANDOFF.md` (append-only convention), `CLAUDE_STATE.json`, `PROJECT_STATUS.md`, `signals/claude_task.json`, `tasks/`, `operator/acknowledgements/`, `FINAL_REPORT.md`, `locks/research.lock/` |
 | Claude Operator | `operator/CONTROL.json`, `operator/OPERATOR_STATE.json`, `operator/requests/` |
-| Bridge watcher | `watcher/WATCHER_STATE.json`, `watcher/watcher.log`, `watcher/logs/` (the read-only live view writes only `watcher/LIVE_VIEW.json`) |
+| Bridge watcher | `watcher/WATCHER_STATE.json`, `watcher/watcher.log`, `watcher/logs/` (the read-only live view writes only `watcher/LIVE_VIEW.json` and `watcher/logs/live_view*.log`) |
 
 The bridge helpers (`dispatcher.py` for Codex, `claude_bridge.py` for Claude/Operator) are the only
 way to change JSON state: temp file, fsync, parse check, atomic replace (or no-clobber rename for
