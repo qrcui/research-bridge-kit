@@ -54,7 +54,7 @@ class TailTest(unittest.TestCase):
     def test_replay_limit_skips_the_cut_line(self):
         with tempfile.TemporaryDirectory() as d:
             f = Path(d, 'x.jsonl')
-            f.write_text('aaaaaaaaaa\nbbbb\ncccc\n')          # 21 bytes
+            f.write_bytes(b'aaaaaaaaaa\nbbbb\ncccc\n')         # 21 bytes (write_text would add \r on Windows)
             t = lv.Tail(f, from_end_limit=12)                  # starts inside 'aaaa…': that line is dropped
             self.assertEqual(t.read_lines(), ['bbbb', 'cccc'])
             self.assertTrue(t.skipped_bytes > 0)
